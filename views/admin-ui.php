@@ -118,6 +118,7 @@ if (isset($conn) && !$conn->connect_error) {
               <p class="form-label">5. Then change the format to JSON</p>
               <p class="form-label">6. Then click export and save the Payments JSON File</p>
               <p class="form-label">6. Upload the JSON file here</p>
+              <p class="form-label">7. Youtube Tutorial: <a href="https://youtu.be/A99zoN2-j8U" target="_blank">https://youtu.be/A99zoN2-j8U</a></p>
             </div>
               <input type="file" class="form-control" id="jsonFile" accept=".json" required>
               <div class="form-text">Please upload Payment's table JSON file containing transaction data.</div>
