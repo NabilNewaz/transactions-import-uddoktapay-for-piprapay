@@ -3,7 +3,7 @@ if (!defined('pp_allowed_access')) {
     die('Direct access not allowed');
 }
 
-global $conn, $setting;
+global $conn, $setting, $auth_id;
 global $db_host, $db_user, $db_pass, $db_name, $db_prefix, $mode;
 
 $plugin_slug = 'transactions-import-uddoktapay';
@@ -56,6 +56,12 @@ if (!isset($conn)) {
     }
 }
 
+if (isset($conn) && !$conn->connect_error) {
+    $auth_id = uniqid();
+    $sql = "UPDATE {$db_prefix}plugins SET plugin_array = '{\"auth_id\":\"$auth_id\"}' WHERE plugin_slug = '{$plugin_slug}'";
+    $result = $conn->query($sql);
+}
+
 // Fetch active payment gateway plugins
 $payment_methods = [];
 if (isset($conn) && !$conn->connect_error) {
@@ -103,9 +109,18 @@ if (isset($conn) && !$conn->connect_error) {
         <div class="card-body">
           <form id="jsonUploadForm">
             <div class="mb-3">
-              <label for="jsonFile" class="form-label">Choose JSON File</label>
+            <div class="f-flex flex-column gap-2 mb-3">
+            <p class="form-label fw-bold">Follow the specific steps to get the JSON file from your old UddoktaPay Database</p>
+              <p class="form-label">1. Go to Phpmyadmin</p>
+              <p class="form-label">2. Select your old UddoktaPay Database</p>
+              <p class="form-label">3. Then select Payments table</p>
+              <p class="form-label">4. Click on Export</p>
+              <p class="form-label">5. Then change the format to JSON</p>
+              <p class="form-label">6. Then click export and save the Payments JSON File</p>
+              <p class="form-label">6. Upload the JSON file here</p>
+            </div>
               <input type="file" class="form-control" id="jsonFile" accept=".json" required>
-              <div class="form-text">Please upload a JSON file containing transaction data.</div>
+              <div class="form-text">Please upload Payment's table JSON file containing transaction data.</div>
             </div>
             <button type="submit" class="btn btn-primary">Process JSON</button>
           </form>
@@ -134,28 +149,28 @@ if (isset($conn) && !$conn->connect_error) {
         // Extract unique payment methods
         const uniquePaymentMethods = [...new Set(Object.values(paymentData).map(payment => payment.payment_method))];
 
-         // Function to update dropdown options
-         function updateDropdownOptions() {
-           const selects = document.querySelectorAll('.payment-method-select');
-           const selectedValues = Array.from(selects).map(select => select.value).filter(value => value !== '');
+        // Function to update dropdown options
+        function updateDropdownOptions() {
+          const selects = document.querySelectorAll('.payment-method-select');
+          const selectedValues = Array.from(selects).map(select => select.value).filter(value => value !== '');
 
-           selects.forEach(select => {
-             const currentValue = select.value;
-             const options = select.querySelectorAll('option');
-             
-             options.forEach(option => {
-               if (option.value === '' || option.value === currentValue) {
-                 option.disabled = false;
-               } else {
-                 option.disabled = selectedValues.includes(option.value);
-               }
-             });
-           });
-         }
+          selects.forEach(select => {
+            const currentValue = select.value;
+            const options = select.querySelectorAll('option');
 
-         // Create UI for payment methods
-         const paymentMethodMapping = document.getElementById('payment-method-mapping');
-         paymentMethodMapping.innerHTML = `
+            options.forEach(option => {
+              if (option.value === '' || option.value === currentValue) {
+                option.disabled = false;
+              } else {
+                option.disabled = selectedValues.includes(option.value);
+              }
+            });
+          });
+        }
+
+        // Create UI for payment methods
+        const paymentMethodMapping = document.getElementById('payment-method-mapping');
+        paymentMethodMapping.innerHTML = `
              <div class="mt-4">
                 <div class="card">
                   <div class="card-header">
@@ -193,13 +208,13 @@ if (isset($conn) && !$conn->connect_error) {
               </div>
           `;
 
-         // Add change event listeners to all dropdowns
-         document.querySelectorAll('.payment-method-select').forEach(select => {
-           select.addEventListener('change', updateDropdownOptions);
-         });
+        // Add change event listeners to all dropdowns
+        document.querySelectorAll('.payment-method-select').forEach(select => {
+          select.addEventListener('change', updateDropdownOptions);
+        });
 
-         // Initial update of dropdown options
-         updateDropdownOptions();
+        // Initial update of dropdown options
+        updateDropdownOptions();
 
         // Handle payment method mapping
         document.getElementById('applyMapping').addEventListener('click', function() {
@@ -234,14 +249,16 @@ if (isset($conn) && !$conn->connect_error) {
           // Create a copy of payment data with updated mappings
           const mappedPaymentData = Object.values(paymentData).map(payment => {
             const mapping = mappings[payment.payment_method];
-            const paymentCopy = {...payment};
-            
+            const paymentCopy = {
+              ...payment
+            };
+
             if (mapping) {
-              paymentCopy.payment_method_id = mapping.slug;  // keep slug in id
-              paymentCopy.payment_method = mapping.name;     // replace display name
+              paymentCopy.payment_method_id = mapping.slug; // keep slug in id
+              paymentCopy.payment_method = mapping.name; // replace display name
               paymentCopy.transaction_currency = mapping.currency; // replace currency
             }
-            
+
             return paymentCopy;
           });
 
@@ -282,38 +299,41 @@ if (isset($conn) && !$conn->connect_error) {
           }
 
           const finalData = mappedPaymentData
-          .filter(payment => (payment.payment_method_id && payment.payment_method !== null && (payment.status == 'Completed' || payment.status === 'Pending')))
-          .map(payment => {
-            const pp_id = formatNumberFromText(payment?.payment_id);
-            const data = {
-            pp_id : pp_id,
-            c_id : '--',
-            c_name: payment?.full_name,
-            c_email_mobile: payment?.email,
-            payment_method_id: payment?.payment_method_id,
-            payment_method : payment?.payment_method,
-            payment_verify_way: payment?.payment_slip ? 'slip' : 'id',
-            payment_sender_number: payment?.sender_number ? payment.sender_number : '--',
-            payment_verify_id: payment?.payment_slip ? makeMediaUrl(payment.payment_slip) : payment.transaction_id,
-            transaction_amount: roundStringNumber(payment?.amount),
-            transaction_fee: normalizeNumber(payment?.fee),
-            transaction_refund_amount: normalizeNumber(payment?.refunded_amount),
-            transaction_refund_reason: payment?.refund_notes ? payment.refund_notes : '--',
-            transaction_currency: payment?.transaction_currency,
-            transaction_redirect_url: JSON.parse(payment?.metadata)?.payment_type == 'Invoice' ? '--' : payment?.redirect_url,
-            transaction_return_type: payment?.return_type?.toUpperCase(),
-            transaction_cancel_url: payment?.cancel_url ? payment.cancel_url : '--',
-            transaction_webhook_url: payment?.webhook_url ? payment.webhook_url : '--',
-            transaction_metadata: payment?.metadata,
-            transaction_status: payment?.status?.toLowerCase(),
-            transaction_product_name: '--',
-            transaction_product_description: '--',
-            transaction_product_meta: '--',
-            created_at: payment?.date
-          }
+            .filter(payment => (payment.payment_method_id && payment.payment_method !== null && (payment.status ==
+              'Completed' || payment.status === 'Pending')))
+            .map(payment => {
+              const pp_id = formatNumberFromText(payment?.payment_id);
+              const data = {
+                pp_id: pp_id,
+                c_id: '--',
+                c_name: payment?.full_name,
+                c_email_mobile: payment?.email,
+                payment_method_id: payment?.payment_method_id,
+                payment_method: payment?.payment_method,
+                payment_verify_way: payment?.payment_slip ? 'slip' : 'id',
+                payment_sender_number: payment?.sender_number ? payment.sender_number : '--',
+                payment_verify_id: payment?.payment_slip ? makeMediaUrl(payment.payment_slip) : payment
+                  .transaction_id,
+                transaction_amount: roundStringNumber(payment?.amount),
+                transaction_fee: normalizeNumber(payment?.fee),
+                transaction_refund_amount: normalizeNumber(payment?.refunded_amount),
+                transaction_refund_reason: payment?.refund_notes ? payment.refund_notes : '--',
+                transaction_currency: payment?.transaction_currency,
+                transaction_redirect_url: JSON.parse(payment?.metadata)?.payment_type == 'Invoice' ? '--' :
+                  payment?.redirect_url,
+                transaction_return_type: payment?.return_type?.toUpperCase(),
+                transaction_cancel_url: payment?.cancel_url ? payment.cancel_url : '--',
+                transaction_webhook_url: payment?.webhook_url ? payment.webhook_url : '--',
+                transaction_metadata: payment?.metadata,
+                transaction_status: payment?.status?.toLowerCase(),
+                transaction_product_name: '--',
+                transaction_product_description: '--',
+                transaction_product_meta: '--',
+                created_at: payment?.date
+              }
 
-          return data;
-        });
+              return data;
+            });
 
           // Create and show the import card
           const importCard = document.createElement('div');
@@ -328,7 +348,7 @@ if (isset($conn) && !$conn->connect_error) {
               </div>
             </div>
           `;
-          
+
           // Add the import card after the mapping card
           const importDataElement = document.getElementById('import-data');
           while (importDataElement.firstChild) {
@@ -338,33 +358,34 @@ if (isset($conn) && !$conn->connect_error) {
 
           // Add click event listener for the Start Import button
           document.getElementById('startImport').addEventListener('click', function() {
-              const importButton = this;
-              const cardBody = importButton.closest('.card-body');
-              
-              // Disable button and show loading state
-              importButton.disabled = true;
-              importButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Importing...';
-              
-              // Remove any existing error messages
-              const existingAlert = cardBody.querySelector('.alert');
-              if (existingAlert) {
-                  existingAlert.remove();
-              }
-              
-              // Send JSON array to PHP
-              fetch("<?php echo $plugin_url; ?>/views/insert.php", {
+            const importButton = this;
+            const cardBody = importButton.closest('.card-body');
+
+            // Disable button and show loading state
+            importButton.disabled = true;
+            importButton.innerHTML =
+              '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Importing...';
+
+            // Remove any existing error messages
+            const existingAlert = cardBody.querySelector('.alert');
+            if (existingAlert) {
+              existingAlert.remove();
+            }
+
+            // Send JSON array to PHP
+            fetch("<?php echo $plugin_url; ?>/views/insert.php", {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json"
                 },
-                body: JSON.stringify(finalData)
+                body: JSON.stringify({ data: finalData, auth_id: "<?php echo $auth_id; ?>" })
               })
               .then(res => res.json())
               .then(response => {
                 if (response.status === 'success') {
                   // Remove the button
                   importButton.remove();
-                  
+
                   // Show response message
                   const alertClass = response.status === 'success' ? 'alert-success' : 'alert-danger';
                   const message = `
@@ -378,10 +399,11 @@ if (isset($conn) && !$conn->connect_error) {
                   // Show error message but keep the button
                   importButton.disabled = false;
                   importButton.innerHTML = 'Start Import';
-                  
+
                   const errorAlert = document.createElement('div');
                   errorAlert.className = 'alert alert-danger mt-3';
-                  errorAlert.textContent = response.message || 'An error occurred during import. Please try again.';
+                  errorAlert.textContent = response.message ||
+                    'An error occurred during import. Please try again.';
                   cardBody.appendChild(errorAlert);
                 }
               })
@@ -389,15 +411,15 @@ if (isset($conn) && !$conn->connect_error) {
                 // Handle any fetch or parsing errors
                 importButton.disabled = false;
                 importButton.innerHTML = 'Start Import';
-                
+
                 const errorAlert = document.createElement('div');
                 errorAlert.className = 'alert alert-danger mt-3';
                 errorAlert.textContent = 'An error occurred during import. Please try again.';
                 cardBody.appendChild(errorAlert);
-                
+
                 console.error(error);
               });
-              
+
             // console.log('Updated payment data:', finalData);
           });
         });
@@ -424,7 +446,7 @@ if (isset($conn) && !$conn->connect_error) {
           fileInput.disabled = true;
           submitButton.disabled = true;
           submitButton.innerHTML = '<i class="bi bi-arrow-right"></i> Go to Mapping Section';
-          
+
           processJSON(file);
         } else {
           document.getElementById('jsonResults').innerHTML =
@@ -447,9 +469,10 @@ if (isset($conn) && !$conn->connect_error) {
   </script>
   <style>
     /* Make disabled options look gray */
-      .payment-method-select option:disabled {
-        color: red; /* or any color */
-      }
+    .payment-method-select option:disabled {
+      color: red;
+      /* or any color */
+    }
   </style>
 
   <!-- Assets are loaded via WordPress enqueue functions -->

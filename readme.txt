@@ -1,4 +1,4 @@
-=== Advance Analytics ===
+=== Transactions Import From Uddoktapay ===
 Contributors: Nabil Newaz
 Donate link: https://nabilnewaz.com/donate
 Tags: analytics, payment analytics, transaction tracking
@@ -10,11 +10,11 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 == Description ==
 
-Advance Analytics is a powerful PipraPay plugin that provides detailed transaction analytic to the PipraPay Payment Panel App — completely free. Get comprehensive insights into your payment data.
+Transactions Import From Uddoktapay is a powerful PipraPay plugin that provides import transactions from Uddoktapay — completely free.
 
 **Key Features:**
-* Detailed Transaction Analytics
-* Payment Trend Analysis
+* Import old transactions from Uddoktapay.
+* Mapping the payments methods
 * User-friendly Dashboard
 
 **Why Use Advance Analytics?**

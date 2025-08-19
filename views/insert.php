@@ -2,6 +2,8 @@
 
 header("Content-Type: application/json");
 
+$plugin_slug = 'transactions-import-uddoktapay';
+
 // Function to dynamically find pp-config.php
 function find_pp_config(): ?string
 {
@@ -41,57 +43,44 @@ if (!isset($conn)) {
 }
 
 // Get JSON input
-$data = json_decode(file_get_contents("php://input"), true);
+$input = json_decode(file_get_contents("php://input"), true);
+$auth_id = $input['auth_id'];
+$data = $input['data'];
 
+// First check auth_id validation
+$sql = "SELECT * FROM {$db_prefix}plugins WHERE plugin_slug = '{$plugin_slug}'";
+$result = $conn->query($sql);
+if (!$result) {
+    echo json_encode(["status" => "error", "message" => "Database error: " . $conn->error]);
+    exit;
+}
+
+$row = $result->fetch_assoc();
+if (!$row) {
+    echo json_encode(["status" => "error", "message" => "Plugin not found"]);
+    exit;
+}
+
+$plugin_array = json_decode($row['plugin_array'], true);
+if (!$plugin_array || !isset($plugin_array['auth_id'])) {
+    echo json_encode(["status" => "error", "message" => "Invalid plugin configuration"]);
+    exit;
+}
+
+// Strict auth_id check
+if ($plugin_array['auth_id'] !== $auth_id) {
+    echo json_encode(["status" => "error", "message" => "Invalid auth_id"]);
+    exit;
+}
+
+// Only proceed if auth is valid
 if (!$data) {
     echo json_encode(["status" => "error", "message" => "No data received"]);
     exit;
 }
 
-// Check if create=true parameter is set
-if (isset($conn) && !$conn->connect_error) {
-    // SQL to create the payment table
-    $sql = "CREATE TABLE IF NOT EXISTS {$db_prefix}payment (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        pp_id VARCHAR(755),
-        c_id VARCHAR(255),
-        c_name VARCHAR(255),
-        c_email_mobile VARCHAR(255),
-        payment_method_id VARCHAR(255),
-        payment_method VARCHAR(255),
-        payment_verify_way VARCHAR(255),
-        payment_sender_number VARCHAR(255),
-        payment_verify_id VARCHAR(255),
-        transaction_amount VARCHAR(255),
-        transaction_fee VARCHAR(255),
-        transaction_refund_amount VARCHAR(755),
-        transaction_refund_reason VARCHAR(755),
-        transaction_currency VARCHAR(755),
-        transaction_redirect_url VARCHAR(755),
-        transaction_return_type VARCHAR(155),
-        transaction_cancel_url VARCHAR(755),
-        transaction_webhook_url VARCHAR(755),
-        transaction_metadata VARCHAR(755),
-        transaction_status VARCHAR(755),
-        transaction_product_name VARCHAR(255),
-        transaction_product_description VARCHAR(755),
-        transaction_product_meta VARCHAR(1755),
-        created_at VARCHAR(255)
-    )";
-
-    try {
-        if ($conn->query($sql)) {
-            $message = '<div class="alert alert-success">Payment table created successfully!</div>';
-        } else {
-            $message = '<div class="alert alert-danger">Error creating payment table: ' . $conn->error . '</div>';
-        }
-    } catch (Exception $e) {
-        $message = '<div class="alert alert-danger">Error: ' . $e->getMessage() . '</div>';
-    }
-}
-
 // Prepare statement for safety
-$stmt = $conn->prepare("INSERT INTO {$db_prefix}payment (pp_id, c_id, c_name, c_email_mobile, payment_method_id, payment_method, payment_verify_way, payment_sender_number, payment_verify_id, transaction_amount, transaction_fee, transaction_refund_amount, transaction_refund_reason, transaction_currency, transaction_redirect_url, transaction_return_type, transaction_cancel_url, transaction_webhook_url, transaction_metadata, transaction_status, transaction_product_name, transaction_product_description, transaction_product_meta, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+$stmt = $conn->prepare("INSERT INTO {$db_prefix}transaction (pp_id, c_id, c_name, c_email_mobile, payment_method_id, payment_method, payment_verify_way, payment_sender_number, payment_verify_id, transaction_amount, transaction_fee, transaction_refund_amount, transaction_refund_reason, transaction_currency, transaction_redirect_url, transaction_return_type, transaction_cancel_url, transaction_webhook_url, transaction_metadata, transaction_status, transaction_product_name, transaction_product_description, transaction_product_meta, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 $stmt->bind_param("ssssssssssssssssssssssss", $pp_id, $c_id, $c_name, $c_email_mobile, $payment_method_id, $payment_method, $payment_verify_way, $payment_sender_number, $payment_verify_id, $transaction_amount, $transaction_fee, $transaction_refund_amount, $transaction_refund_reason, $transaction_currency, $transaction_redirect_url, $transaction_return_type, $transaction_cancel_url, $transaction_webhook_url, $transaction_metadata, $transaction_status, $transaction_product_name, $transaction_product_description, $transaction_product_meta, $created_at);
 
 $inserted = 0;
@@ -124,6 +113,12 @@ foreach ($data as $row) {
     if ($stmt->execute()) {
         $inserted++;
     }
+}
+
+if (isset($conn) && !$conn->connect_error) {
+    $auth_id = '';
+    $sql = "UPDATE {$db_prefix}plugins SET plugin_array = '{\"auth_id\":\"$auth_id\"}' WHERE plugin_slug = '{$plugin_slug}'";
+    $result = $conn->query($sql);
 }
 
 $stmt->close();

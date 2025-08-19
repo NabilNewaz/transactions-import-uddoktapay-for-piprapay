@@ -1,6 +1,6 @@
 {
   "type": "plugins",
   "slug": "transactions-import-uddoktapay",
-  "name": "Advance Analytics",
+  "name": "Transactions Import From Uddoktapay",
   "mrdr": "modules"
 }
