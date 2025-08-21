@@ -301,7 +301,7 @@ if (isset($conn) && !$conn->connect_error) {
 
           const finalData = mappedPaymentData
             .filter(payment => (payment.payment_method_id && payment.payment_method !== null && (payment.status ==
-              'Completed' || payment.status === 'Pending')))
+              'Completed' || payment.status === 'Pending' || payment.status == 'Refunded')))
             .map(payment => {
               const pp_id = formatNumberFromText(payment?.payment_id);
               const data = {
